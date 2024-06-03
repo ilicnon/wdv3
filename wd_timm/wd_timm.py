@@ -9,7 +9,6 @@ import torch
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
 from PIL import Image
-from simple_parsing import field
 from timm.data import create_transform, resolve_data_config
 from torch import Tensor, nn
 from torch.nn import functional as F
@@ -120,15 +119,6 @@ def get_tags(
     taglist = caption.replace("_", " ").replace("(", "\(").replace(")", "\)")
 
     return caption, taglist, rating_labels, char_labels, gen_labels
-
-
-@dataclass
-class ScriptOptions:
-    image_file: Path = field(positional=True)
-    model: str = field(default="vit")
-    gen_threshold: float = field(default=0.35)
-    char_threshold: float = field(default=0.75)
-
 
 def inference_on_file(
     model_name: str,
