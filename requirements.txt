@@ -1,4 +1,3 @@
-diffusers
 huggingface-hub
 numpy
 pandas

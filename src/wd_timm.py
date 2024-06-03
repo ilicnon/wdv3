@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable, assert_type
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,11 @@ MODEL_REPO_MAP = {
 def pil_ensure_rgb(image: Image.Image) -> Image.Image:
     # convert to RGB/RGBA if not already (deals with palette images etc.)
     if image.mode not in ["RGB", "RGBA"]:
-        image = image.convert("RGBA") if "transparency" in image.info else image.convert("RGB")
+        image = (
+            image.convert("RGBA")
+            if "transparency" in image.info
+            else image.convert("RGB")
+        )
     # convert RGBA to RGB with white background
     if image.mode == "RGBA":
         canvas = Image.new("RGBA", image.size, (255, 255, 255))
@@ -59,11 +63,16 @@ def load_labels_hf(
 ) -> LabelData:
     try:
         csv_path = hf_hub_download(
-            repo_id=repo_id, filename="selected_tags.csv", revision=revision, token=token
+            repo_id=repo_id,
+            filename="selected_tags.csv",
+            revision=revision,
+            token=token,
         )
         csv_path = Path(csv_path).resolve()
     except HfHubHTTPError as e:
-        raise FileNotFoundError(f"selected_tags.csv failed to download from {repo_id}") from e
+        raise FileNotFoundError(
+            f"selected_tags.csv failed to download from {repo_id}"
+        ) from e
 
     df: pd.DataFrame = pd.read_csv(csv_path, usecols=["name", "category"])
     tag_data = LabelData(
@@ -83,20 +92,24 @@ def get_tags(
     char_threshold: float,
 ):
     # Convert indices+probs to labels
-    probs = list(zip(labels.names, probs.numpy()))
+    probs_ = list(zip(labels.names, probs.numpy()))
 
     # First 4 labels are actually ratings
-    rating_labels = dict([probs[i] for i in labels.rating])
+    rating_labels = dict([probs_[i] for i in labels.rating])
 
     # General labels, pick any where prediction confidence > threshold
-    gen_labels = [probs[i] for i in labels.general]
+    gen_labels = [probs_[i] for i in labels.general]
     gen_labels = dict([x for x in gen_labels if x[1] > gen_threshold])
-    gen_labels = dict(sorted(gen_labels.items(), key=lambda item: item[1], reverse=True))
+    gen_labels = dict(
+        sorted(gen_labels.items(), key=lambda item: item[1], reverse=True)
+    )
 
     # Character labels, pick any where prediction confidence > threshold
-    char_labels = [probs[i] for i in labels.character]
+    char_labels = [probs_[i] for i in labels.character]
     char_labels = dict([x for x in char_labels if x[1] > char_threshold])
-    char_labels = dict(sorted(char_labels.items(), key=lambda item: item[1], reverse=True))
+    char_labels = dict(
+        sorted(char_labels.items(), key=lambda item: item[1], reverse=True)
+    )
 
     # Combine general and character labels, sort by confidence
     combined_names = [x for x in gen_labels]
@@ -117,13 +130,19 @@ class ScriptOptions:
     char_threshold: float = field(default=0.75)
 
 
-def main(opts: ScriptOptions):
-    repo_id = MODEL_REPO_MAP.get(opts.model)
-    image_path = Path(opts.image_file).resolve()
+def inference_on_file(
+    model_name: str,
+    image_file: str | Path,
+    pretrained_cfg: float,
+    gen_threshold: float,
+    char_threshold: float,
+):
+    repo_id = MODEL_REPO_MAP.get(model_name) or ""
+    image_path = Path(image_file).resolve()
     if not image_path.is_file():
         raise FileNotFoundError(f"Image file not found: {image_path}")
 
-    print(f"Loading model '{opts.model}' from '{repo_id}'...")
+    print(f"Loading model '{model_name}' from '{repo_id}'...")
     model: nn.Module = timm.create_model("hf-hub:" + repo_id).eval()
     state_dict = timm.models.load_state_dict_from_hf(repo_id)
     model.load_state_dict(state_dict)
@@ -132,7 +151,7 @@ def main(opts: ScriptOptions):
     labels: LabelData = load_labels_hf(repo_id=repo_id)
 
     print("Creating data transform...")
-    transform = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
+    transform = create_transform(**resolve_data_config(pretrained_cfg, model=model))
 
     print("Loading image and preprocessing...")
     # get image
@@ -142,7 +161,7 @@ def main(opts: ScriptOptions):
     # pad to square with white background
     img_input = pil_pad_square(img_input)
     # run the model's input transform to convert to tensor and rescale
-    inputs: Tensor = transform(img_input).unsqueeze(0)
+    inputs: Tensor = transform(img_input).unsqueeze(0)  # type: ignore
     # NCHW image RGB to BGR
     inputs = inputs[:, [2, 1, 0]]
 
@@ -166,8 +185,8 @@ def main(opts: ScriptOptions):
     caption, taglist, ratings, character, general = get_tags(
         probs=outputs.squeeze(0),
         labels=labels,
-        gen_threshold=opts.gen_threshold,
-        char_threshold=opts.char_threshold,
+        gen_threshold=gen_threshold,
+        char_threshold=char_threshold,
     )
 
     print("--------")
@@ -181,21 +200,13 @@ def main(opts: ScriptOptions):
         print(f"  {k}: {v:.3f}")
 
     print("--------")
-    print(f"Character tags (threshold={opts.char_threshold}):")
+    print(f"Character tags (threshold={char_threshold}):")
     for k, v in character.items():
         print(f"  {k}: {v:.3f}")
 
     print("--------")
-    print(f"General tags (threshold={opts.gen_threshold}):")
+    print(f"General tags (threshold={gen_threshold}):")
     for k, v in general.items():
         print(f"  {k}: {v:.3f}")
 
     print("Done!")
-
-
-if __name__ == "__main__":
-    opts, _ = parse_known_args(ScriptOptions)
-    if opts.model not in MODEL_REPO_MAP:
-        print(f"Available models: {list(MODEL_REPO_MAP.keys())}")
-        raise ValueError(f"Unknown model name '{opts.model}'")
-    main(opts)
