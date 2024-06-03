@@ -1,7 +1,7 @@
 huggingface-hub
 numpy
 pandas
-pillow >= 9.5.0
+pillow >= 9.4.0
 timm @ git+https://github.com/huggingface/pytorch-image-models@main#egg=timm
 tokenizers
 torch >= 2.0.0
