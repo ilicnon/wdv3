@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Callable, assert_type
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -9,7 +9,7 @@ import torch
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
 from PIL import Image
-from simple_parsing import field, parse_known_args
+from simple_parsing import field
 from timm.data import create_transform, resolve_data_config
 from torch import Tensor, nn
 from torch.nn import functional as F
