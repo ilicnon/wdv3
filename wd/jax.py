@@ -163,6 +163,9 @@ def get_tags(
     char_threshold: float,
 ):
     # Convert indices+probs to labels
+    print(probs)
+    print(labels.names)
+
     probs = list(zip(labels.names, probs))
 
     # First 4 labels are actually ratings
