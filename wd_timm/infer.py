@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import timm
 import torch
+
+from tqdm.auto import tqdm
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
 from PIL import Image
@@ -126,7 +128,7 @@ def get_infer_batch(
     batch_size=32,
     gen_threshold=0.35,
     char_threshold=0.85,
-) -> Callable[[List[Path | str]], None]:
+) -> Callable[[List[Path]], None]:
     repo_id = MODEL_REPO_MAP.get(model_name) or ""
 
     print(f"Loading model '{model_name}' from '{repo_id}'...")
@@ -144,10 +146,10 @@ def get_infer_batch(
 
     print("Setting up inference function...")
 
-    def infer_batch(batch: List[Path | str]):
-        def process_batch(sub_batch: List[Path | str]):
+    def infer_files(batch: List[Path]):
+        def infer_batch(batch: List[Path]):
             imgs = []
-            for image_path in sub_batch:
+            for image_path in batch:
                 img_input = Image.open(image_path)
                 img_input = pil_ensure_rgb(img_input)
                 img_input = pil_pad_square(img_input)
@@ -171,7 +173,7 @@ def get_infer_batch(
                     model.to("cpu")
 
             results = []
-            for i, image_path in enumerate(sub_batch):
+            for i, image_path in enumerate(batch):
                 output = outputs[i]
                 caption, taglist, ratings, character, general = get_tags(
                     probs=output,
@@ -179,22 +181,33 @@ def get_infer_batch(
                     gen_threshold=gen_threshold,
                     char_threshold=char_threshold,
                 )
-                results.append((image_path, caption, taglist))
+                results.append(
+                    (image_path, caption, taglist, ratings, character, general)
+                )
             return results
 
         # Process in batches
         results = []
-        for i in range(0, len(batch), batch_size):
+        for i in tqdm(range(0, len(batch), batch_size)):
             sub_batch = batch[i : i + batch_size]
-            batch_results = process_batch(sub_batch)
+            batch_results = infer_batch(sub_batch)
             results.extend(batch_results)
 
         # Print the results
-        for image_path, caption, taglist in results:
+        for image_path, caption, taglist, ratings, character, general in results:
             print(f"Image: {image_path}")
             print("--------")
             print(f"Caption: {caption}")
             print("--------")
-            print(f"Tags: {taglist}")
+            print(f"Taglist: {taglist}")
+            print("--------")
+            print(f"Ratings: {ratings}")
+            print("--------")
+            print(f"Character: {character}")
+            print("--------")
+            print(f"General: {general}")
+            print("--------")
 
-    return infer_batch
+        return results
+
+    return infer_files
