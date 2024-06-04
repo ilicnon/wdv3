@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable, List
 
 import numpy as np
 import pandas as pd
@@ -120,17 +120,14 @@ def get_tags(
 
     return caption, taglist, rating_labels, char_labels, gen_labels
 
-def inference_on_file(
+
+def get_infer_batch(
     model_name: str,
-    image_file: str | Path,
     pretrained_cfg: float,
     gen_threshold: float,
     char_threshold: float,
-):
+) -> Callable[[List[Path | str]], None]:
     repo_id = MODEL_REPO_MAP.get(model_name) or ""
-    image_path = Path(image_file).resolve()
-    if not image_path.is_file():
-        raise FileNotFoundError(f"Image file not found: {image_path}")
 
     print(f"Loading model '{model_name}' from '{repo_id}'...")
     model: nn.Module = timm.create_model("hf-hub:" + repo_id).eval()
@@ -138,65 +135,52 @@ def inference_on_file(
     model.load_state_dict(state_dict)
 
     print("Loading tag list...")
-    labels: LabelData = load_labels_hf(repo_id=repo_id)
+    labels = load_labels_hf(repo_id=repo_id)
 
     print("Creating data transform...")
-    transform = create_transform(**resolve_data_config(pretrained_cfg, model=model))
-
-    print("Loading image and preprocessing...")
-    # get image
-    img_input: Image.Image = Image.open(image_path)
-    # ensure image is RGB
-    img_input = pil_ensure_rgb(img_input)
-    # pad to square with white background
-    img_input = pil_pad_square(img_input)
-    # run the model's input transform to convert to tensor and rescale
-    inputs: Tensor = transform(img_input).unsqueeze(0)  # type: ignore
-    # NCHW image RGB to BGR
-    inputs = inputs[:, [2, 1, 0]]
-
-    print("Running inference...")
-    with torch.inference_mode():
-        # move model to GPU, if available
-        if torch_device.type != "cpu":
-            model = model.to(torch_device)
-            inputs = inputs.to(torch_device)
-        # run the model
-        outputs = model.forward(inputs)
-        # apply the final activation function (timm doesn't support doing this internally)
-        outputs = F.sigmoid(outputs)
-        # move inputs, outputs, and model back to to cpu if we were on GPU
-        if torch_device.type != "cpu":
-            inputs = inputs.to("cpu")
-            outputs = outputs.to("cpu")
-            model = model.to("cpu")
-
-    print("Processing results...")
-    caption, taglist, ratings, character, general = get_tags(
-        probs=outputs.squeeze(0),
-        labels=labels,
-        gen_threshold=gen_threshold,
-        char_threshold=char_threshold,
+    transform = create_transform(
+        **resolve_data_config(model.pretrained_cfg, model=model)
     )
 
-    print("--------")
-    print(f"Caption: {caption}")
-    print("--------")
-    print(f"Tags: {taglist}")
+    print("Setting up inference function...")
 
-    print("--------")
-    print("Ratings:")
-    for k, v in ratings.items():
-        print(f"  {k}: {v:.3f}")
+    def infer_batch(batch: List[Path | str]):
+        imgs = []
+        for image_path in batch:
+            img_input = Image.open(image_path)
+            img_input = pil_ensure_rgb(img_input)
+            img_input = pil_pad_square(img_input)
+            inputs = transform(img_input).unsqueeze(0)  # type: ignore
+            inputs = inputs[:, [2, 1, 0]]
+            imgs.append(inputs)
 
-    print("--------")
-    print(f"Character tags (threshold={char_threshold}):")
-    for k, v in character.items():
-        print(f"  {k}: {v:.3f}")
+        inputs = torch.cat(imgs)
 
-    print("--------")
-    print(f"General tags (threshold={gen_threshold}):")
-    for k, v in general.items():
-        print(f"  {k}: {v:.3f}")
+        with torch.inference_mode():
+            if torch.cuda.is_available():
+                model.to("cuda")
+                inputs = inputs.to("cuda")
 
-    print("Done!")
+            outputs = model(inputs)
+            outputs = F.sigmoid(outputs)
+
+            if torch.cuda.is_available():
+                inputs = inputs.to("cpu")
+                outputs = outputs.to("cpu")
+                model.to("cpu")
+
+        for i, image_path in enumerate(batch):
+            output = outputs[i]
+            caption, taglist, ratings, character, general = get_tags(
+                probs=output,
+                labels=labels,
+                gen_threshold=gen_threshold,
+                char_threshold=char_threshold,
+            )
+            print(f"Image: {image_path}")
+            print("--------")
+            print(f"Caption: {caption}")
+            print("--------")
+            print(f"Tags: {taglist}")
+
+    return infer_batch
