@@ -123,7 +123,6 @@ def get_tags(
 
 def get_infer_batch(
     model_name: str,
-    pretrained_cfg: float,
     gen_threshold: float,
     char_threshold: float,
 ) -> Callable[[List[Path | str]], None]:
