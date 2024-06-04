@@ -15,7 +15,6 @@ setup(
             "torchvision",
         ],
         "jax": [
-            "jax",
             "flax",
         ]
     },
