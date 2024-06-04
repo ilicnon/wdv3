@@ -1,6 +1,6 @@
 huggingface-hub
 numpy
 pandas
-pillow >= 935.0
+pillow
 tokenizers
 transformers
