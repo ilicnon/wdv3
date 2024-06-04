@@ -129,6 +129,7 @@ def get_infer_batch(
     gen_threshold=0.35,
     char_threshold=0.85,
 ) -> Callable[[List[Path]], List[Any]]:
+    print("Using timm...")
     repo_id = MODEL_REPO_MAP.get(model_name) or ""
 
     print(f"Loading model '{model_name}' from '{repo_id}'...")

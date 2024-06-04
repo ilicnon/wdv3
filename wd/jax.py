@@ -40,7 +40,6 @@ class PredModel:
     def predict(self, x):
         preds = self.jit_predict(x)
         preds = jax.device_get(preds)
-        preds = preds[0]
         return preds
 
 
@@ -208,6 +207,7 @@ def get_infer_batch(
     gen_threshold=0.35,
     char_threshold=0.85,
 ) -> Callable[[List[Path]], List[Any]]:
+    print("Using jax...")
     repo_id = MODEL_REPO_MAP.get(model_name) or ""
 
     print(f"Loading model '{model_name}' from '{repo_id}'...")
@@ -224,11 +224,11 @@ def get_infer_batch(
                 img_input = pil_ensure_rgb(img_input)
                 img_input = pil_pad_square(img_input)
                 img_input = pil_resize(img_input, target_size)
-                input = np.array(img_input)
-                input = np.expand_dims(input, axis=0)
-                input = input[..., ::-1]
+                input_ = np.array(img_input)
+                input_ = np.expand_dims(input_, axis=0)
+                input_ = input_[..., ::-1]
 
-                imgs.append(input)
+                imgs.append(input_)
 
             inputs = jax.numpy.concat(imgs)
             outputs = model.predict(inputs)

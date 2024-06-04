@@ -8,4 +8,15 @@ setup(
     version="0.1",
     packages=find_packages(),
     install_requires=requirements,
+    extra_require={
+        "torch": [
+            "timm @ git+https://github.com/huggingface/pytorch-image-models@main#egg=timm"
+            "torch >= 2.0.0",
+            "torchvision",
+        ],
+        "jax": [
+            "jax",
+            "flax",
+        ]
+    },
 )
