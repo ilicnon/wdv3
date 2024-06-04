@@ -123,8 +123,9 @@ def get_tags(
 
 def get_infer_batch(
     model_name: str,
-    gen_threshold: float,
-    char_threshold: float,
+    batch_size=32,
+    gen_threshold=0.35,
+    char_threshold=0.85,
 ) -> Callable[[List[Path | str]], None]:
     repo_id = MODEL_REPO_MAP.get(model_name) or ""
 
@@ -144,38 +145,52 @@ def get_infer_batch(
     print("Setting up inference function...")
 
     def infer_batch(batch: List[Path | str]):
-        imgs = []
-        for image_path in batch:
-            img_input = Image.open(image_path)
-            img_input = pil_ensure_rgb(img_input)
-            img_input = pil_pad_square(img_input)
-            inputs = transform(img_input).unsqueeze(0)  # type: ignore
-            inputs = inputs[:, [2, 1, 0]]
-            imgs.append(inputs)
+        def process_batch(sub_batch: List[Path | str]):
+            imgs = []
+            for image_path in sub_batch:
+                img_input = Image.open(image_path)
+                img_input = pil_ensure_rgb(img_input)
+                img_input = pil_pad_square(img_input)
+                inputs = transform(img_input).unsqueeze(0)  # type: ignore
+                inputs = inputs[:, [2, 1, 0]]
+                imgs.append(inputs)
 
-        inputs = torch.cat(imgs)
+            inputs = torch.cat(imgs)
 
-        with torch.inference_mode():
-            if torch.cuda.is_available():
-                model.to("cuda")
-                inputs = inputs.to("cuda")
+            with torch.inference_mode():
+                if torch.cuda.is_available():
+                    model.to("cuda")
+                    inputs = inputs.to("cuda")
 
-            outputs = model(inputs)
-            outputs = F.sigmoid(outputs)
+                outputs = model(inputs)
+                outputs = F.sigmoid(outputs)
 
-            if torch.cuda.is_available():
-                inputs = inputs.to("cpu")
-                outputs = outputs.to("cpu")
-                model.to("cpu")
+                if torch.cuda.is_available():
+                    inputs = inputs.to("cpu")
+                    outputs = outputs.to("cpu")
+                    model.to("cpu")
 
-        for i, image_path in enumerate(batch):
-            output = outputs[i]
-            caption, taglist, ratings, character, general = get_tags(
-                probs=output,
-                labels=labels,
-                gen_threshold=gen_threshold,
-                char_threshold=char_threshold,
-            )
+            results = []
+            for i, image_path in enumerate(sub_batch):
+                output = outputs[i]
+                caption, taglist, ratings, character, general = get_tags(
+                    probs=output,
+                    labels=labels,
+                    gen_threshold=gen_threshold,
+                    char_threshold=char_threshold,
+                )
+                results.append((image_path, caption, taglist))
+            return results
+
+        # Process in batches
+        results = []
+        for i in range(0, len(batch), batch_size):
+            sub_batch = batch[i : i + batch_size]
+            batch_results = process_batch(sub_batch)
+            results.extend(batch_results)
+
+        # Print the results
+        for image_path, caption, taglist in results:
             print(f"Image: {image_path}")
             print("--------")
             print(f"Caption: {caption}")
