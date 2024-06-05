@@ -129,7 +129,7 @@ def get_infer_batch(
     gen_threshold=0.35,
     char_threshold=0.85,
 ) -> Callable[[List[Path]], List[Any]]:
-    print("Using timm...")
+    print("Using pytorch timm...")
     repo_id = MODEL_REPO_MAP.get(model_name) or ""
 
     print(f"Loading model '{model_name}' from '{repo_id}'...")
@@ -173,6 +173,9 @@ def get_infer_batch(
                     outputs = outputs.to("cpu")
                     model.to("cpu")
 
+            print(inputs.shape)
+            print(outputs.shape)
+
             results = []
 
             for i, image_path in enumerate(batch):
@@ -195,21 +198,6 @@ def get_infer_batch(
             sub_batch = batch[i : i + batch_size]
             batch_results = infer_batch(sub_batch)
             results.extend(batch_results)
-
-        # Print the results
-        for image_path, caption, taglist, ratings, character, general in results:
-            print(f"Image: {image_path}")
-            print("--------")
-            print(f"Caption: {caption}")
-            print("--------")
-            print(f"Taglist: {taglist}")
-            print("--------")
-            print(f"Ratings: {ratings}")
-            print("--------")
-            print(f"Character: {character}")
-            print("--------")
-            print(f"General: {general}")
-            print("--------")
 
         return results
 
