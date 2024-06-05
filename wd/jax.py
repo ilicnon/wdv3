@@ -28,6 +28,7 @@ class PredModel:
     apply_fun: Callable = struct.field(pytree_node=False)
     params: Any = struct.field(pytree_node=True)
 
+    @jax.pmap
     def jit_predict(self, x):
         # Not actually JITed since this is a single shot script,
         # but this is the function you would decorate with @jax.jit
@@ -37,9 +38,11 @@ class PredModel:
         x = jax.numpy.float32(x)
         return x
 
+    @jax.pmap
     def predict(self, x):
         preds = self.jit_predict(x)
         preds = jax.device_get(preds)
+        print(preds.shape)
         return preds
 
 
@@ -163,9 +166,6 @@ def get_tags(
     char_threshold: float,
 ):
     # Convert indices+probs to labels
-    print(probs)
-    print(labels.names)
-
     probs = list(zip(labels.names, probs))
 
     # First 4 labels are actually ratings
@@ -236,6 +236,9 @@ def get_infer_batch(
             inputs = jax.numpy.concat(imgs)
             outputs = model.predict(inputs)
 
+            print(inputs.shape)
+            print(outputs.shape)
+
             results = []
             for i, image_path in enumerate(batch):
                 output = outputs[i]
@@ -255,25 +258,10 @@ def get_infer_batch(
 
         # Process in batches
         results = []
-        for i in tqdm(range(0, len(batch), batch_size)):
+        for i in range(0, len(batch), batch_size):
             sub_batch = batch[i : i + batch_size]
             batch_results = infer_batch(sub_batch)
             results.extend(batch_results)
-
-        # Print the results
-        for image_path, caption, taglist, ratings, character, general in results:
-            print(f"Image: {image_path}")
-            print("--------")
-            print(f"Caption: {caption}")
-            print("--------")
-            print(f"Taglist: {taglist}")
-            print("--------")
-            print(f"Ratings: {ratings}")
-            print("--------")
-            print(f"Character: {character}")
-            print("--------")
-            print(f"General: {general}")
-            print("--------")
 
         return results
 

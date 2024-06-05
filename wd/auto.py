@@ -7,6 +7,7 @@ def tpu_available():
 
 
 try:
+    print("1:36")
     import jax
 
     if tpu_available():
